@@ -1,4 +1,4 @@
-# import the necessary packages
+# import
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
 from tensorflow.keras.applications import MobileNetV2
 from tensorflow.keras.layers import AveragePooling2D
@@ -23,7 +23,7 @@ import os
 
 
 
-# construct the argument parser and parse the arguments
+# 构造参数解析器（默认，但一些图片格式不会被识别，需要替换或者删除图像）
 ap = argparse.ArgumentParser()
 ap.add_argument("-d", "--dataset", default="dataset",
 	help="path to input dataset")
@@ -34,47 +34,47 @@ ap.add_argument("-m", "--model", type=str,
 	help="path to output face mask detector model")
 args = vars(ap.parse_args())
 
-# hyperparameters 
-# initialize the initial learning rate, number of epochs to train for, and batch size
+# 定义超参数
+# 初始化初始学习率（INIT_LR）、要训练的EPOCHS数和Batch（BS）
 INIT_LR = 1e-4 #Initial Learning Rate. Later, we will be applying a learning rate decay schedule, thats why it's initial.
 EPOCHS = 20 
 BS = 32
 
 
 
-# grab the list of images in our dataset directory, then initialize
-# the list of data (i.e., images) and class images
+# 获取数据集目录中的图像列表，然后初始化
+# 数据列表（即图像）
 print("[INFO] loading images...")
 imagePaths = list(paths.list_images(args["dataset"]))
 print(imagePaths)
 data = []
 labels = []
 
-# loop over the image paths
+# 循环图像路径
 for imagePath in imagePaths:
-	# extract the class label from the filename
-	label = imagePath.split(os.path.sep)[-2] # Split imagePath with \ and Extract Folder name ie: with_mask or without_mask
-	# load the input image (224x224) and preprocess it
+	# 从文件名中提取类标签
+	label = imagePath.split(os.path.sep)[-2] # 拆分with_mask和without_mask
+	# 加载图像和预处理
 	image = load_img(imagePath, target_size=(224, 224))
 	image = img_to_array(image)
 	image = preprocess_input(image)
-	# update the data and labels lists, respectively
+	# 分别更新数据和标签列表
 	data.append(image)
 	labels.append(label)
-# convert the data and labels to NumPy arrays
+# 将数据和标签转换为 NumPy 数组
 data = np.array(data, dtype="float32")
 labels = np.array(labels)
 
 
 
-# perform one-hot encoding on the labels
+# 对标签执行 one-hot 编码
 lb = LabelBinarizer()
 labels = lb.fit_transform(labels)
 labels = to_categorical(labels)
-# partition the data into training and testing splits using 80% of the data for training and the remaining 20% for testing
+# 使用80%的数据进行训练，剩下的20%用于测试
 (trainX, testX, trainY, testY) = train_test_split(data, labels,
 	test_size=0.20, stratify=labels, random_state=42)
-# construct the training image generator for data augmentation
+# 构建用于数据增强的训练图像
 aug = ImageDataGenerator(
 	rotation_range=20,
 	zoom_range=0.15,
@@ -86,32 +86,25 @@ aug = ImageDataGenerator(
 
 
 
-# load the MobileNetV2 network, ensuring the head FC layer sets are
-# left off
+# 加载 MobileNetV2 网络
 baseModel = MobileNetV2(weights="imagenet", include_top=False,
 	input_tensor=Input(shape=(224, 224, 3)))
-# construct the head of the model that will be placed on top of the
-# the base model
 headModel = baseModel.output
 headModel = AveragePooling2D(pool_size=(7, 7))(headModel)
 headModel = Flatten(name="flatten")(headModel)
 headModel = Dense(128, activation="relu")(headModel)
 headModel = Dropout(0.5)(headModel)
 headModel = Dense(2, activation="softmax")(headModel)
-# place the head FC model on top of the base model (this will become
-# the actual model we will train)
 model = Model(inputs=baseModel.input, outputs=headModel)
-# loop over all layers in the base model and freeze them so they will
-# *not* be updated during the first training process
 for layer in baseModel.layers:
 	layer.trainable = False
 
 
-# compile our model
+# 编译模型
 print("[INFO] compiling model...")
 opt = Adam(lr=INIT_LR, decay=INIT_LR / EPOCHS)
 model.compile(loss="binary_crossentropy", optimizer=opt, metrics=["accuracy"])
-# train the head of the network
+# 训练
 print("[INFO] training head...")
 H = model.fit(
 	aug.flow(trainX, trainY, batch_size=BS),
@@ -121,20 +114,18 @@ H = model.fit(
 
 
 
-# make predictions on the testing set
+# 预测
 print("[INFO] evaluating network...")
 predIdxs = model.predict(testX, batch_size=BS)
-# for each image in the testing set we need to find the index of the
-# label with corresponding largest predicted probability
 predIdxs = np.argmax(predIdxs, axis=1)
-# show a nicely formatted classification report
+# 显示结果
 print(classification_report(testY.argmax(axis=1), predIdxs, target_names=lb.classes_))
-# serialize the model to disk
+# 保存模型
 print("[INFO] saving mask detector model...")
 model.save(args["model"], save_format="h5")
 
 
-# plot the training loss and accuracy
+# 常用的画图
 N = EPOCHS
 plt.style.use("ggplot")
 plt.figure()
